@@ -196,3 +196,99 @@ def plot_ture_vs_pred(x, y, z, name, height, plots_dir):
 
     fig.suptitle(rf"Additive {height} $\AA$ over the surface")
     fig.savefig(plots_dir / f"{name}-{height}-heat.png")
+
+
+
+class SurfaceAdditive(base.ProcessSingleAtom):
+    """This class generates periodic structures by creating a vacuum slab in the
+    z-direction and adding additives at various positions. It is useful for generating
+    input structures for surface training simulations or in combination with the
+    SurfaceRasterMetrics class to analyze how well surface interactions are captured
+    in the training.
+
+    Attributes
+    ----------
+    symbol: str
+        ASE symbol representing the additives.
+    z_dist_list: list[float]
+         A list of z-distances at which additives will be added.
+    n_conf_per_dist: list[int]
+        The number of configurations to generate per z-distance.
+    cell_fraction: list[float]
+        Fractional scaling of the unit cell in x and y directions.
+    random: bool
+       If True, additives are placed randomly within the specified cell_fraction.
+    max_rattel_shift: float
+        Maximum random displacement for each atom.
+    seed: int
+        Seed for randomly distributing the additive.
+    """
+
+    symbol: str = zntrack.params()
+    z_dist_list: list[float] = zntrack.params()
+    min_dist: float = zntrack.params()
+    n_conf_per_dist: int = zntrack.params(5)
+    seed: int = zntrack.params(1)
+
+    def run(self) -> None:
+        rng = default_rng(self.seed)
+        
+        atoms = self.get_data()
+
+        cell = atoms.cell
+        cellpar = cell.cellpar()
+        cell = np.array(cell)
+
+        z_max = max(atoms.get_positions()[:, 2])
+        atoms_list = []
+        for z_dist in self.z_dist_list:
+            if cellpar[2] < z_max + z_dist + 10:
+                cellpar[2] = z_max + z_dist + 10
+                new_cell = Cell.fromcellpar(cellpar)
+                atoms.set_cell(new_cell)
+                log.warning("vacuum was extended")
+
+            current_num_strucs = 0
+            scaled_positions = []
+
+            while current_num_strucs < self.n_conf_per_dist:
+                a_scaling = np.array(rng.uniform(0, 1))
+                b_scaling = np.array(rng.uniform(0, 1))
+                a_vec = cell[0, :2] *(1 - self.min_dist / np.linalg.norm(cell[0, :2]))
+                b_vec = cell[1, :2] *(1 - self.min_dist / np.linalg.norm(cell[1, :2]))
+                scaled_a_vec = a_scaling * a_vec
+                scaled_b_vec = b_scaling * b_vec
+
+                cart_pos = scaled_a_vec + scaled_b_vec
+
+                if current_num_strucs == 0:
+                    scaled_positions.append(cart_pos)
+                    num_failed_iterations = 0
+                    current_num_strucs += 1
+                else:
+                    dist = [abs(np.linalg.norm(cart_pos - x)) for x in scaled_positions]
+                    
+                    if np.any(np.array(dist) < self.min_dist):
+                        num_failed_iterations +=1
+                    else:
+                        scaled_positions.append(cart_pos)
+                        num_failed_iterations = 0
+                        current_num_strucs += 1
+                        
+                if current_num_strucs == self.n_conf_per_dist:
+                    break
+                elif num_failed_iterations > 2000 :
+                    raise ValueError(f'Cannot fit additives with distance {self.min_dist} into the cell; maximum is {current_num_strucs}')
+            
+            scaled_positions = np.array(scaled_positions)
+            z_pos = np.full_like(scaled_positions[:, 0], z_max + z_dist)
+            z_pos = z_pos.reshape(-1, 1)
+            scaled_positions = np.concatenate((scaled_positions, z_pos), axis=1)
+            
+            atoms_list.append(atoms.copy())
+            extension = ase.Atoms(
+                f'{self.symbol}{len(scaled_positions)}', scaled_positions
+            )
+            atoms_list[-1].extend(extension)
+
+        self.atoms = atoms_list
