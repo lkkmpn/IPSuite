@@ -1,11 +1,13 @@
-from .apax_jax_md import ApaxJaxMD
+from .apax_jax_md import ApaxJaxMD, MappedApaxJaxMD
 from .ase_geoopt import ASEGeoOpt
 from .ase_md import (
     ASEMD,
+    MappedASEMD,
     BoxOscillatingRampModifier,
     FixedLayerConstraint,
     FixedSphereConstraint,
     LangevinThermostat,
+    VelocityVerletDyn,
     NPTThermostat,
     PressureRampModifier,
     RescaleBoxModifier,
@@ -25,11 +27,14 @@ __all__ = [
     "CP2KYaml",
     "ASEGeoOpt",
     "ASEMD",
+    "MappedASEMD",
     "FixedSphereConstraint",
     "xTBSinglePoint",
     "LJSinglePoint",
     "LangevinThermostat",
+    "VelocityVerletDyn",
     "ApaxJaxMD",
+    "MappedApaxJaxMD",
     "RescaleBoxModifier",
     "BoxOscillatingRampModifier",
     "EMTSinglePoint",

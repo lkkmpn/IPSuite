@@ -13,6 +13,7 @@ import znh5md
 import zntrack
 from ase import units
 from ase.md.langevin import Langevin
+from ase.md.verlet import VelocityVerlet
 from ase.md.npt import NPT
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
 from tqdm import trange
@@ -275,6 +276,30 @@ class LangevinThermostat(base.IPSNode):
         )
         return thermostat
 
+class VelocityVerletDyn(base.IPSNode):
+    """Initialize the Velocity Verlet dynamics
+
+    Attributes
+    ----------
+    time_step: float
+        time step of simulation
+
+    temperature: float
+        temperature in K to simulate at
+
+    friction: float
+        friction of the Langevin simulator
+
+    """
+
+    time_step: int = zntrack.params()
+    append_trajectory: bool = zntrack.params(True)
+    def get_thermostat(self, atoms):
+        dyn = Langevin(
+            atoms=VelocityVerlet,
+            timestep=self.time_step * units.fs,
+        )
+        return dyn
 
 class NPTThermostat(base.IPSNode):
     """Initialize the ASE NPT barostat
@@ -633,3 +658,218 @@ def update_metrics_dict(atoms, metrics_dict, checks):
             metrics_dict[checker.get_quantity()].append(metric)
 
     return metrics_dict
+
+
+class MappedASEMD(base.ProcessAtoms):
+    """Class to run a MD simulation with ASE.
+
+    Attributes
+    ----------
+    atoms_lst: list
+        list of atoms objects to start simulation from
+    start_id: int
+        starting id to pick from list of atoms
+    model: zntrack.Node
+        A node that implements a 'get_calculation' method
+    checks: list[Check]
+        checks, which track various metrics and stop the
+        simulation if some criterion is met.
+    constraints: list[Constraint]
+        constrains the atoms within the md simulation
+    modifiers: list[mIt seems like there is a typo in the code snippet you provided. The correct term should be `modifiers` instead of `odifiers`.
+    It seems like there is a typo in the code snippet you provided. The correct term should be `modifiers` instead of `odifiers`.
+    odifiers]
+    thermostat: ase dynamics
+        dynamics method used for simulation
+    init_temperature: float
+        temperature in K to initialize velocities
+    init_velocity: np.array()
+        starting velocities to continue a simulation
+    steps: int
+        total number of steps of the simulation
+    sampling_rate: int
+        number defines after how many md steps a structure
+        is loaded to the cache
+    metrics_dict:
+        saved total energy and metrics from the check nodes
+    repeat: float
+        number of repeats
+    traj_file: Path
+        path where to save the trajectory
+    dump_rate: int, default=1000
+        Keep a cache of the last 'dump_rate' atoms and
+        write them to the trajectory file every 'dump_rate' steps.
+    wrap: bool
+        Keep the atoms in the cell.
+    """
+
+    model = zntrack.deps()
+
+    model_outs = zntrack.outs_path(zntrack.nwd / "model/")
+    checks: list = zntrack.deps(None)
+    constraints: list = zntrack.deps(None)
+    modifiers: list = zntrack.deps(None)
+    thermostat = zntrack.deps()
+
+    steps: int = zntrack.params()
+    sampling_rate = zntrack.params(1)
+    repeat = zntrack.params((1, 1, 1))
+    dump_rate = zntrack.params(1000)
+    pop_last = zntrack.params(False)
+    use_momenta = zntrack.params(False)
+    seed: int = zntrack.params(42)
+    wrap: bool = zntrack.params(False)
+
+    metrics_dict = zntrack.plots()
+
+    steps_before_stopping = zntrack.metrics()
+
+    traj_file: pathlib.Path = zntrack.outs_path(zntrack.nwd / "structures.h5")
+
+    def get_atoms(self) -> ase.Atoms:
+        atoms_list: ase.Atoms = self.get_data()
+        for atoms in atoms_list:
+            atoms.repeat(self.repeat)
+        return atoms_list
+
+    @property
+    def atoms(self) -> typing.List[ase.Atoms]:
+        def file_handle(filename):
+            file = self.state.fs.open(filename, "rb")
+            return h5py.File(file)
+
+        return znh5md.ASEH5MD(
+            self.traj_file,
+            format_handler=functools.partial(
+                znh5md.FormatHandler, file_handle=file_handle
+            ),
+        ).get_atoms_list()
+
+    def run(self):  # noqa: C901
+        """Run the simulation."""
+        np.random.seed(self.seed)
+        
+        if self.checks is None:
+            self.checks = []
+        if self.modifiers is None:
+            self.modifiers = []
+        if self.constraints is None:
+            self.constraints = []
+
+        self.model_outs.mkdir(parents=True, exist_ok=True)
+        (self.model_outs / "outs.txt").write_text("Lorem Ipsum")
+        atoms_list = self.get_atoms()
+        
+        db = znh5md.io.DataWriter(self.traj_file)
+        db.initialize_database_groups()
+  
+        for starting_atoms in atoms_list:
+            atoms = starting_atoms.copy()
+            atoms.calc = self.model.get_calculator(directory=self.model_outs)
+
+            if not self.use_momenta:
+                init_temperature = self.thermostat.temperature
+                MaxwellBoltzmannDistribution(atoms, temperature_K=init_temperature)
+
+            # initialize thermostat
+            time_step = self.thermostat.time_step
+            thermostat = self.thermostat.get_thermostat(atoms=atoms)
+
+            # initialize Atoms calculator and metrics_dict
+            metrics_dict = {"energy": [], "temperature": []}
+            for checker in self.checks:
+                checker.initialize(atoms)
+                if checker.get_quantity() is not None:
+                    metrics_dict[checker.get_quantity()] = []
+
+            # Run simulation
+            sampling_iterations = self.steps / self.sampling_rate
+            if sampling_iterations % 1 != 0:
+                sampling_iterations = np.round(sampling_iterations)
+                self.steps = int(sampling_iterations * self.sampling_rate)
+                log.warning(
+                    "The sampling_rate is not a devisor of steps."
+                    f"Steps were adjusted to {self.steps}"
+                )
+            sampling_iterations = int(sampling_iterations)
+            total_fs = self.steps * time_step
+            
+            for constraint in self.constraints:
+                atoms.set_constraint(constraint.get_constraint(atoms))
+
+            atoms_cache = []
+            self.steps_before_stopping = -1
+
+            with trange(
+                self.steps,
+                leave=True,
+                ncols=120,
+            ) as pbar:
+                for idx_outer in range(sampling_iterations):
+                    desc = []
+                    stop = []
+
+                    # run MD for sampling_rate steps
+                    for idx_inner in range(self.sampling_rate):
+                        for modifier in self.modifiers:
+                            modifier.modify(
+                                thermostat,
+                                step=idx_outer * self.sampling_rate + idx_inner,
+                                total_steps=self.steps,
+                            )
+                        if self.wrap:
+                            atoms.wrap()
+
+                        thermostat.run(1)
+
+                        for checker in self.checks:
+                            stop.append(checker.check(atoms))
+                            if stop[-1]:
+                                log.critical(str(checker))
+
+                        if any(stop):
+                            break
+
+                    if any(stop):
+                        self.steps_before_stopping = (
+                            idx_outer * self.sampling_rate + idx_inner
+                        )
+                        break
+                    else:
+                        metrics_dict = update_metrics_dict(
+                            atoms, metrics_dict, self.checks
+                        )
+                        atoms_cache.append(freeze_copy_atoms(atoms))
+                        if len(atoms_cache) == self.dump_rate:
+                            db.add(
+                                znh5md.io.AtomsReader(
+                                    atoms_cache,
+                                    frames_per_chunk=self.dump_rate,
+                                    step=1,
+                                    time=self.sampling_rate,
+                                )
+                            )
+                            atoms_cache = []
+
+                        time = (idx_outer + 1) * self.sampling_rate * time_step
+                        temperature = metrics_dict["temperature"][-1]
+                        energy = metrics_dict["energy"][-1]
+                        desc = get_desc(temperature, energy, time, total_fs)
+                        pbar.set_description(desc)
+                        pbar.update(self.sampling_rate)
+
+            if not self.pop_last and self.steps_before_stopping != -1:
+                metrics_dict = update_metrics_dict(atoms, metrics_dict, self.checks)
+                atoms_cache.append(freeze_copy_atoms(atoms))
+
+            db.add(
+                znh5md.io.AtomsReader(
+                    atoms_cache,
+                    frames_per_chunk=self.dump_rate,
+                    step=1,
+                    time=self.sampling_rate,
+                )
+            )
+            self.metrics_dict = pd.DataFrame(metrics_dict)
+
+            self.metrics_dict.index.name = "step"
