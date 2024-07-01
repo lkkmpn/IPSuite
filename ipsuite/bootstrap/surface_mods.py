@@ -41,7 +41,6 @@ class SurfaceRasterScan(base.ProcessSingleAtom):
     z_dist_list: list[float] = zntrack.params()
     n_conf_per_dist: list[int] = zntrack.params([5, 5])
     cell_fraction: list[float] = zntrack.params([1, 1])
-    random: bool = zntrack.params(False)
     max_rattel_shift: float = zntrack.params(None)
     seed: int = zntrack.params(1)
 
@@ -68,14 +67,9 @@ class SurfaceRasterScan(base.ProcessSingleAtom):
                 atoms.set_cell(new_cell)
                 log.warning("vacuum was extended")
 
-            if not self.random:
-                a_scaling = np.linspace(0, 1, self.n_conf_per_dist[0])
-                b_scaling = np.linspace(0, 1, self.n_conf_per_dist[1])
-            else:
-                a_scaling = np.random.rand(self.n_conf_per_dist[0])
-                a_scaling = np.sort(a_scaling)
-                b_scaling = np.random.rand(self.n_conf_per_dist[1])
-                b_scaling = np.sort(b_scaling)
+            fraction = [(2*(self.n_conf_per_dist[0]))**-1, (2*(self.n_conf_per_dist[1]))**-1]
+            a_scaling = np.linspace(fraction[0], 1-fraction[0], self.n_conf_per_dist[0])
+            b_scaling = np.linspace(fraction[1], 1-fraction[1], self.n_conf_per_dist[1])
 
             a_vec = cell[0, :2] * self.cell_fraction[0]
             scaled_a_vecs = a_scaling[:, np.newaxis] * a_vec
@@ -250,14 +244,15 @@ class SurfaceAdditive(base.ProcessSingleAtom):
 
             current_num_strucs = 0
             scaled_positions = []
-
+            
+            diff = [self.min_dist / np.linalg.norm(cell[0, :2])/2, self.min_dist / np.linalg.norm(cell[1, :2])/2]
+            
             while current_num_strucs < self.n_conf_per_dist:
-                a_scaling = np.array(rng.uniform(0, 1))
-                b_scaling = np.array(rng.uniform(0, 1))
-                a_vec = cell[0, :2] *(1 - self.min_dist / np.linalg.norm(cell[0, :2]))
-                b_vec = cell[1, :2] *(1 - self.min_dist / np.linalg.norm(cell[1, :2]))
-                scaled_a_vec = a_scaling * a_vec
-                scaled_b_vec = b_scaling * b_vec
+                a_scaling = np.array(rng.uniform(diff[0], 1-diff[0]))
+                b_scaling = np.array(rng.uniform(diff[1], 1-diff[1]))
+                
+                scaled_a_vec = a_scaling * cell[0, :2]
+                scaled_b_vec = b_scaling * cell[1, :2]
 
                 cart_pos = scaled_a_vec + scaled_b_vec
 
@@ -292,3 +287,96 @@ class SurfaceAdditive(base.ProcessSingleAtom):
             atoms_list[-1].extend(extension)
 
         self.atoms = atoms_list
+        
+
+def y_rot_mat(angle_radians):
+    rotation_matrix = np.array([[np.cos(angle_radians), 0, -np.sin(angle_radians)],
+                                [0, 1, 0],
+                                [np.sin(angle_radians), 0, np.cos(angle_radians)],
+                                ])
+    return rotation_matrix
+
+def z_rot_mat(angle_radians):
+    rotation_matrix = np.array([[np.cos(angle_radians), -np.sin(angle_radians), 0],
+                                [np.sin(angle_radians), np.cos(angle_radians), 0],
+                                [0, 0, 1],
+                                ])
+    return rotation_matrix
+
+def position_velocitie_rotation(pos, velo, angle_degrees, rot_axis):
+    rot_matrix = {"y": y_rot_mat,
+                     "z": z_rot_mat}
+    
+    # Convert angle from degrees to radians
+    angle_radians = np.radians(angle_degrees)
+    
+    rotation_matrix = rot_matrix[rot_axis](angle_radians)
+    
+    # Apply the rotation matrix to the vector
+    rotated_pos = np.dot(rotation_matrix, pos)
+    rotate_velo = np.dot(rotation_matrix, velo)
+    return rotated_pos, rotate_velo
+
+
+class PosVeloRotation(base.ProcessSingleAtom):
+    """This class generates 
+    """
+
+    symbol: str = zntrack.params()
+    y_rotation_angles: list[float] = zntrack.params()
+    z_rotation_angles: list[float] = zntrack.params()
+    position: list[float] = zntrack.params()           #np.array([0., 0., 8.0*Ang,])
+    velocitie:  list[float] = zntrack.params()          #np.array([0., 0., -8000.0*m/s,])
+    n_conf_per_dist: list[int] = zntrack.params([5, 5])
+    cell_fraction: list[float] = zntrack.params([1, 1])
+
+    output_file = zntrack.outs_path(zntrack.nwd / "structures.h5")
+
+    def run(self) -> None:
+        self.y_rotation_angles = np.array(self.y_rotation_angles)
+        self.z_rotation_angles = np.array(self.z_rotation_angles)
+        self.position = np.array(self.position)
+        self.velocitie = np.array(self.velocitie)
+        
+        atoms = self.get_data()
+        cell = atoms.cell
+        cellpar = cell.cellpar()
+
+        z_max = max(atoms.get_positions()[:, 2])
+        if cellpar[2] < self.position[2] + 10:
+            cellpar[2] = self.position[2] + 10
+            new_cell = Cell.fromcellpar(cellpar)
+            atoms.set_cell(new_cell)
+            log.warning("vacuum was extended")
+
+        cell = np.array(atoms.cell)  
+        
+        fraction = [(2*(self.n_conf_per_dist[0]))**-1, (2*(self.n_conf_per_dist[1]))**-1]
+        a_scaling = np.linspace(fraction[0], 1-fraction[0], self.n_conf_per_dist[0])
+        b_scaling = np.linspace(fraction[1], 1-fraction[1], self.n_conf_per_dist[1])
+
+        a_vec = cell[0, :2] * self.cell_fraction[0]
+        scaled_a_vecs = a_scaling[:, np.newaxis] * a_vec
+        b_vec = cell[1, :2] * self.cell_fraction[1]
+        scaled_b_vecs = b_scaling[:, np.newaxis] * b_vec
+
+        self.atoms = []
+        for a in scaled_a_vecs:
+            for b in scaled_b_vecs:
+                xy_impact_pos = np.array(a + b)
+
+                for z_angle in self.z_rotation_angles:
+                    for y_angle in self.y_rotation_angles:
+                        self.atoms.append(atoms.copy())
+                        
+                        rot_pos, rot_velo = position_velocitie_rotation(self.position, self.velocitie, y_angle, "y")
+                        rot_pos_z, rot_velo_z = position_velocitie_rotation(rot_pos, rot_velo, z_angle, "z")
+
+                        final_pos = rot_pos_z + np.array([xy_impact_pos[0], xy_impact_pos[1], z_max])
+                        additive = ase.Atoms(
+                                self.symbol,
+                                [final_pos],
+                                velocities=rot_velo_z,
+                        )
+                        self.atoms[-1].extend(additive)
+

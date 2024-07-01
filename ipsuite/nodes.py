@@ -54,6 +54,7 @@ class _Nodes:
     SurfaceRasterScan = "ipsuite.bootstrap.SurfaceRasterScan"
     SurfaceRasterMetrics = "ipsuite.bootstrap.SurfaceRasterMetrics"
     SurfaceAdditive = "ipsuite.bootstrap.SurfaceAdditive"
+    PosVeloRotation = "ipsuite.bootstrap.PosVeloRotation"
     # Analysis
     DipoleHistogram = "ipsuite.analysis.DipoleHistogram"
     EnergyHistogram = "ipsuite.analysis.EnergyHistogram"
