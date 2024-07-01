@@ -106,13 +106,6 @@ class ProcessSingleAtom(IPSNode):
                 atoms = self.data[self.data_id].copy()
             else:
                 atoms = self.data.copy()
-        elif self.data_file is not None:
-            try:
-                with self.state.fs.open(pathlib.Path(self.data_file).as_posix()) as f:
-                    atoms = list(ase.io.iread(f))[self.data_id]
-            except FileNotFoundError:
-                # File can not be opened with DVCFileSystem, try normal open
-                atoms = list(ase.io.iread(self.data_file))[self.data_id]
         else:
             raise ValueError("No data given.")
         return atoms
