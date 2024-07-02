@@ -31,7 +31,7 @@ class SurfaceRasterScan(base.ProcessSingleAtom):
         Fractional scaling of the unit cell in x and y directions.
     random: bool
        If True, additives are placed randomly within the specified cell_fraction.
-    max_rattel_shift: float
+    max_deflection_shift: float
         Maximum random displacement for each atom.
     seed: int
         Seed for randomly distributing the additive.
@@ -41,9 +41,10 @@ class SurfaceRasterScan(base.ProcessSingleAtom):
     z_dist_list: list[float] = zntrack.params()
     n_conf_per_dist: list[int] = zntrack.params([5, 5])
     cell_fraction: list[float] = zntrack.params([1, 1])
-    max_rattel_shift: float = zntrack.params(None)
+    max_deflection_shift: float = zntrack.params(None)
     seed: int = zntrack.params(1)
-
+    cell_displacement: list[float] = zntrack.params([0, 0])
+    
     def run(self) -> None:
         rng = default_rng(self.seed)
 
@@ -78,21 +79,21 @@ class SurfaceRasterScan(base.ProcessSingleAtom):
 
             for a in scaled_a_vecs:
                 for b in scaled_b_vecs:
-                    if self.max_rattel_shift is not None:
+                    if self.max_deflection_shift is not None:
                         new_atoms = atoms.copy()
-                        displacement = rng.uniform(
-                            -self.max_rattel_shift,
-                            self.max_rattel_shift,
+                        deflection = rng.uniform(
+                            -self.max_deflection_shift,
+                            self.max_deflection_shift,
                             size=new_atoms.positions.shape,
                         )
-                        new_atoms.positions += displacement
+                        new_atoms.positions += deflection
                         atoms_list.append(new_atoms)
                     else:
                         atoms_list.append(atoms.copy())
 
                     cart_pos = a + b
                     extension = ase.Atoms(
-                        self.symbol, [[cart_pos[0], cart_pos[1], z_max + z_dist]]
+                        self.symbol, [[cart_pos[0] + self.cell_displacement[0], cart_pos[1] + self.cell_displacement[1], z_max + z_dist]]
                     )
                     atoms_list[-1].extend(extension)
 
