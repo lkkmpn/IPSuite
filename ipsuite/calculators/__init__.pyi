@@ -7,7 +7,6 @@ from .ase_md import (
     FixedLayerConstraint,
     FixedSphereConstraint,
     LangevinThermostat,
-    VelocityVerletDyn,
     NPTThermostat,
     PressureRampModifier,
     RescaleBoxModifier,

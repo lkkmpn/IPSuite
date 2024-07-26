@@ -24,6 +24,7 @@ from ipsuite.analysis.model import (
     RattleAnalysis,
     TemperatureCheck,
     ThresholdCheck,
+    ReflectionCheck,
 )
 from ipsuite.analysis.sensitivity import (
     AnalyseGlobalForceSensitivity,
@@ -58,4 +59,5 @@ __all__ = [
     "ForcesUncertaintyHistogram",
     "EnergyUncertaintyHistogram",
     "AnalyseDensity",
+    "ReflectionCheck",
 ]

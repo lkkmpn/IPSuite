@@ -14,7 +14,6 @@ import znh5md
 import zntrack
 from ase import units
 from ase.md.langevin import Langevin
-from ase.md.verlet import VelocityVerlet
 from ase.md.npt import NPT
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
 from ase.md.verlet import VelocityVerlet
@@ -277,31 +276,6 @@ class LangevinThermostat(base.IPSNode):
             friction=self.friction,
         )
         return thermostat
-
-class VelocityVerletDyn(base.IPSNode):
-    """Initialize the Velocity Verlet dynamics
-
-    Attributes
-    ----------
-    time_step: float
-        time step of simulation
-
-    temperature: float
-        temperature in K to simulate at
-
-    friction: float
-        friction of the Langevin simulator
-
-    """
-
-    time_step: int = zntrack.params()
-    append_trajectory: bool = zntrack.params(True)
-    def get_thermostat(self, atoms):
-        dyn = Langevin(
-            atoms=VelocityVerlet,
-            timestep=self.time_step * units.fs,
-        )
-        return dyn
 
 class VelocityVerletDynamic(base.IPSNode):
     """Initialize the Velocity Verlet dynamics
@@ -685,7 +659,7 @@ class ASEMD(base.IPSNode):
                     current_step += 1
 
         if not self.pop_last and self.steps_before_stopping != -1:
-            metrics_dict = update_metrics_dict(atoms, metrics_dict, self.checks)
+            metrics_dict = update_metrics_dict(atoms, metrics_dict, self.checks, current_step)
             atoms_cache.append(freeze_copy_atoms(atoms))
             current_step += 1
 

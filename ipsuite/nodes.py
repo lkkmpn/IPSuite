@@ -38,6 +38,7 @@ class _Nodes:
     MultiPackmol = "ipsuite.configuration_generation.MultiPackmol"
     SmilesToAtoms = "ipsuite.configuration_generation.SmilesToAtoms"
     SmilesToConformers = "ipsuite.configuration_generation.SmilesToConformers"
+    ConvertLegacyZnh5md = "ipsuite.configuration_generation.ConvertLegacyZnh5md"
 
     # Data
     AddData = "ipsuite.data_loading.AddData"
@@ -83,6 +84,7 @@ class _Nodes:
     FixedSphereConstraint = "ipsuite.calculators.FixedSphereConstraint"
     FixedLayerConstraint = "ipsuite.calculators.FixedLayerConstraint"
     AnalyseDensity = "ipsuite.analysis.AnalyseDensity"
+    ReflectionCheck = "ipsuite.analysis.ReflectionCheck"
 
     # calculators
     CP2KSinglePoint = "ipsuite.calculators.CP2KSinglePoint"

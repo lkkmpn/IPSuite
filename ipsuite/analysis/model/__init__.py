@@ -19,6 +19,7 @@ from ipsuite.analysis.model.dynamics_checks import (
     NaNCheck,
     TemperatureCheck,
     ThresholdCheck,
+    ReflectionCheck,
 )
 from ipsuite.analysis.model.predict import (
     CalibrationMetrics,
@@ -43,4 +44,5 @@ __all__ = [
     "MDStability",
     "TemperatureCheck",
     "ThresholdCheck",
+    "ReflectionCheck",
 ]

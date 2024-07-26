@@ -6,6 +6,10 @@ import numpy as np
 import zntrack
 from ase.cell import Cell
 from numpy.random import default_rng
+import znh5md
+import typing
+import functools
+import h5py
 
 from ipsuite import analysis, base
 
@@ -44,10 +48,14 @@ class SurfaceRasterScan(base.ProcessSingleAtom):
     max_deflection_shift: float = zntrack.params(None)
     seed: int = zntrack.params(1)
     cell_displacement: list[float] = zntrack.params([0, 0])
-    
+    output_file = zntrack.outs_path(zntrack.nwd / "structures.h5")
+
     def run(self) -> None:
         rng = default_rng(self.seed)
-
+        
+        db = znh5md.io.DataWriter(self.output_file)
+        db.initialize_database_groups()
+        
         atoms = self.get_data()
 
         cell = atoms.cell
@@ -60,7 +68,7 @@ class SurfaceRasterScan(base.ProcessSingleAtom):
             self.n_conf_per_dist = [self.n_conf_per_dist, self.n_conf_per_dist]
         if not isinstance(self.cell_fraction, list):
             self.cell_fraction = [self.cell_fraction, self.cell_fraction]
-        atoms_list = []
+        structures = []
         for z_dist in self.z_dist_list:
             if cellpar[2] < z_max + z_dist + 10:
                 cellpar[2] = z_max + z_dist + 10
@@ -87,19 +95,32 @@ class SurfaceRasterScan(base.ProcessSingleAtom):
                             size=new_atoms.positions.shape,
                         )
                         new_atoms.positions += deflection
-                        atoms_list.append(new_atoms)
+                        structures.append(new_atoms)
                     else:
-                        atoms_list.append(atoms.copy())
+                        structures.append(atoms.copy())
 
                     cart_pos = a + b
                     extension = ase.Atoms(
                         self.symbol, [[cart_pos[0] + self.cell_displacement[0], cart_pos[1] + self.cell_displacement[1], z_max + z_dist]]
                     )
-                    atoms_list[-1].extend(extension)
+                    structures[-1].extend(extension)
 
-        self.atoms = atoms_list
+        db.add(znh5md.io.AtomsReader(structures))
+        
+    @property
+    def atoms(self) -> typing.List[ase.Atoms]:
+        def file_handle(filename):
+            file = self.state.fs.open(filename, "rb")
+            return h5py.File(file)
 
-
+        return znh5md.ASEH5MD(
+            self.output_file,
+            format_handler=functools.partial(
+                znh5md.FormatHandler, file_handle=file_handle
+            ),
+        ).get_atoms_list()
+        
+        
 class SurfaceRasterMetrics(analysis.PredictionMetrics):
     """This class analyzes the surface interaction of an additive with a surface.
     It is used to evaluate how well the surface structure is learned during training.
@@ -224,9 +245,13 @@ class SurfaceAdditive(base.ProcessSingleAtom):
     min_dist: float = zntrack.params()
     n_conf_per_dist: int = zntrack.params(5)
     seed: int = zntrack.params(1)
+    output_file = zntrack.outs_path(zntrack.nwd / "structures.h5")
 
     def run(self) -> None:
         rng = default_rng(self.seed)
+        
+        db = znh5md.io.DataWriter(self.output_file)
+        db.initialize_database_groups()
         
         atoms = self.get_data()
 
@@ -235,7 +260,7 @@ class SurfaceAdditive(base.ProcessSingleAtom):
         cell = np.array(cell)
 
         z_max = max(atoms.get_positions()[:, 2])
-        atoms_list = []
+        structures = []
         for z_dist in self.z_dist_list:
             if cellpar[2] < z_max + z_dist + 10:
                 cellpar[2] = z_max + z_dist + 10
@@ -281,13 +306,26 @@ class SurfaceAdditive(base.ProcessSingleAtom):
             z_pos = z_pos.reshape(-1, 1)
             scaled_positions = np.concatenate((scaled_positions, z_pos), axis=1)
             
-            atoms_list.append(atoms.copy())
+            structures.append(atoms.copy())
             extension = ase.Atoms(
                 f'{self.symbol}{len(scaled_positions)}', scaled_positions
             )
-            atoms_list[-1].extend(extension)
+            structures[-1].extend(extension)
 
-        self.atoms = atoms_list
+        db.add(znh5md.io.AtomsReader(structures))
+        
+    @property
+    def atoms(self) -> typing.List[ase.Atoms]:
+        def file_handle(filename):
+            file = self.state.fs.open(filename, "rb")
+            return h5py.File(file)
+
+        return znh5md.ASEH5MD(
+            self.output_file,
+            format_handler=functools.partial(
+                znh5md.FormatHandler, file_handle=file_handle
+            ),
+        ).get_atoms_list()
         
 
 def y_rot_mat(angle_radians):
@@ -339,6 +377,9 @@ class PosVeloRotation(base.ProcessSingleAtom):
         self.position = np.array(self.position)
         self.velocitie = np.array(self.velocitie)
         
+        db = znh5md.io.DataWriter(self.output_file)
+        db.initialize_database_groups()
+        
         atoms = self.get_data()
         cell = atoms.cell
         cellpar = cell.cellpar()
@@ -361,14 +402,14 @@ class PosVeloRotation(base.ProcessSingleAtom):
         b_vec = cell[1, :2] * self.cell_fraction[1]
         scaled_b_vecs = b_scaling[:, np.newaxis] * b_vec
 
-        self.atoms = []
+        structures = []
         for a in scaled_a_vecs:
             for b in scaled_b_vecs:
                 xy_impact_pos = np.array(a + b)
 
                 for z_angle in self.z_rotation_angles:
                     for y_angle in self.y_rotation_angles:
-                        self.atoms.append(atoms.copy())
+                        structures.append(atoms.copy())
                         
                         rot_pos, rot_velo = position_velocitie_rotation(self.position, self.velocitie, y_angle, "y")
                         rot_pos_z, rot_velo_z = position_velocitie_rotation(rot_pos, rot_velo, z_angle, "z")
@@ -379,5 +420,19 @@ class PosVeloRotation(base.ProcessSingleAtom):
                                 [final_pos],
                                 velocities=rot_velo_z,
                         )
-                        self.atoms[-1].extend(additive)
+                        structures[-1].extend(additive)
 
+        db.add(znh5md.io.AtomsReader(structures))
+        
+    @property
+    def atoms(self) -> typing.List[ase.Atoms]:
+        def file_handle(filename):
+            file = self.state.fs.open(filename, "rb")
+            return h5py.File(file)
+
+        return znh5md.ASEH5MD(
+            self.output_file,
+            format_handler=functools.partial(
+                znh5md.FormatHandler, file_handle=file_handle
+            ),
+        ).get_atoms_list()

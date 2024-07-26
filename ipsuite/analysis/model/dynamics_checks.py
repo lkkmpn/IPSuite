@@ -231,3 +231,41 @@ class ThresholdCheck(base.Check):
                 f" {std:.3f}' and max value '{self.max_value}'"
             )
             return False
+
+
+class ReflectionCheck(base.Check):
+    
+    cutoff_plane: float = zntrack.params()
+    additive_idx: int = zntrack.params(None)
+
+
+    def initialize(self, atoms: ase.Atoms) -> None:
+        self.reflected = False
+        self.cutoff_penetrated = False
+
+        
+    def check(self, atoms) -> bool:
+        z_pos = atoms.positions[:,2]
+        idx = np.where(z_pos > self.cutoff_plane)[0]
+        
+        if self.additive_idx is None:
+            self.cutoff_penetrated = True
+        else:
+            additive_z_pos = z_pos[self.additive_idx]
+            if not self.cutoff_penetrated and additive_z_pos < self.cutoff_plane:
+                self.cutoff_penetrated = True
+            
+        if self.cutoff_penetrated and len(idx) != 0:
+            self.reflected = True
+            
+        if self.reflected:
+            del atoms[idx]
+            self.status = (
+                    f"Atom(s) was/were reflected and deleted."
+                )
+            if np.any(z_pos >= self.cutoff_plane-5):
+                return False
+            else:
+                return True
+            
+        return False
