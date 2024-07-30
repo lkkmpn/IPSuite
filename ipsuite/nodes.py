@@ -39,6 +39,7 @@ class _Nodes:
     SmilesToAtoms = "ipsuite.configuration_generation.SmilesToAtoms"
     SmilesToConformers = "ipsuite.configuration_generation.SmilesToConformers"
     ConvertLegacyZnh5md = "ipsuite.configuration_generation.ConvertLegacyZnh5md"
+    Smiles2Gromacs = "ipsuite.configuration_generation.Smiles2Gromacs"
 
     # Data
     AddData = "ipsuite.data_loading.AddData"
