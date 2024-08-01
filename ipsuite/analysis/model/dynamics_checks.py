@@ -4,6 +4,7 @@ import ase
 import numpy as np
 import zntrack
 from ase.neighborlist import build_neighbor_list
+import typing
 
 from ipsuite import base
 from ipsuite.utils.ase_sim import get_energy
@@ -234,15 +235,50 @@ class ThresholdCheck(base.Check):
 
 
 class ReflectionCheck(base.Check):
+    """
+    A class to check and handle the reflection of atoms in a simulation.
+
+    Parameters
+    ----------
+    cutoff_plane : float
+        The z-coordinate of the cutoff plane. If None, `cutoff_plane_dist` must be specified.
+    additive_idx : int
+        Index of the additive atom to monitor. If None, all atoms are considered for penetration check.
+    cutoff_plane_dist : float
+        Distance from the maximum z-coordinate of atoms to define the cutoff plane. Used if `cutoff_plane` is None.
+    cutoff_plane_skin : float
+        Skin distance added to the cutoff plane for determining reflection criteria.
+        
+    Attributes:
+    ----------
+    reflected : bool
+        Indicates if atoms have been reflected.
+    cutoff_penetrated : bool
+        Indicates if the cutoff plane has been penetrated by atoms.
+    z_max : float
+        Maximum z-coordinate of atoms in the initial configuration.
+    """
+    cutoff_plane: float = zntrack.params(None)
+    additive_idx: typing.List[int] = zntrack.params(None)
+    cutoff_plane_dist: float = zntrack.params(None)
+    cutoff_plane_skin: float = zntrack.params(1.5)
     
-    cutoff_plane: float = zntrack.params()
-    additive_idx: int = zntrack.params(None)
-
-
     def initialize(self, atoms: ase.Atoms) -> None:
         self.reflected = False
         self.cutoff_penetrated = False
-
+        
+        z_pos = atoms.positions[:,2]
+        if self.additive_idx is None:
+            z_max = np.max(z_pos)
+        else:
+            z_max = np.max(np.delete(z_pos, self.additive_idx))
+            
+        if self.cutoff_plane is None and self.cutoff_plane_dist is None:
+            raise ValueError("Either cutoff_plane or cutoff_plane_dist has to be specified.")
+        elif self.cutoff_plane_dist is not None:
+            if self.cutoff_plane is not None:
+                raise ValueError("Specify either cutoff_plane or cutoff_plane_dist, not both.")
+            self.cutoff_plane = z_max + self.cutoff_plane_dist
         
     def check(self, atoms) -> bool:
         z_pos = atoms.positions[:,2]
@@ -263,9 +299,7 @@ class ReflectionCheck(base.Check):
             self.status = (
                     f"Atom(s) was/were reflected and deleted."
                 )
-            if np.any(z_pos >= self.cutoff_plane-5):
-                return False
-            else:
+            if np.all(z_pos < self.cutoff_plane-self.cutoff_plane_skin):
                 return True
-            
+
         return False
