@@ -5,10 +5,10 @@ import numpy as np
 import zntrack
 from ase.neighborlist import build_neighbor_list
 import typing
+from scipy import sparse
 
 from ipsuite import base
 from ipsuite.utils.ase_sim import get_energy
-
 
 class NaNCheck(base.Check):
     """Check Node to see whether positions, energies or forces become NaN
@@ -282,7 +282,7 @@ class ReflectionCheck(base.Check):
         
     def check(self, atoms) -> bool:
         z_pos = atoms.positions[:,2]
-        idx = np.where(z_pos > self.cutoff_plane)[0]
+        idxs = np.where(z_pos > self.cutoff_plane)[0]
         
         if self.additive_idx is None:
             self.cutoff_penetrated = True
@@ -291,15 +291,26 @@ class ReflectionCheck(base.Check):
             if not self.cutoff_penetrated and additive_z_pos < self.cutoff_plane:
                 self.cutoff_penetrated = True
             
-        if self.cutoff_penetrated and len(idx) != 0:
+        if self.cutoff_penetrated and len(idxs) != 0:
             self.reflected = True
             
         if self.reflected:
-            del atoms[idx]
+            nl = build_neighbor_list(atoms, self_interaction=False)
+            matrix = nl.get_connectivity_matrix()
+            n_components, component_list = sparse.csgraph.connected_components(matrix)
+
+            del_atom_idxs = []
+            del_mol_idxs = []
+            for atom_idx in idxs:
+                mol_idx = component_list[atom_idx]
+                if mol_idx not in del_mol_idxs:
+                    del_mol_idxs.append(mol_idx)
+                    del_atom_idxs.extend([i for i in range(len(component_list)) if component_list[i] == mol_idx])
+
+            del atoms[del_atom_idxs]
             self.status = (
-                    f"Atom(s) was/were reflected and deleted."
+                    f"Molecule/s {del_mol_idxs} with Atom(s) {del_atom_idxs} was/were reflected and deleted."
                 )
-            if np.all(z_pos < self.cutoff_plane-self.cutoff_plane_skin):
-                return True
+            return True
 
         return False
