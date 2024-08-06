@@ -206,12 +206,19 @@ class CP2KSinglePoint(base.ProcessAtoms):
 
         db = znh5md.IO(self.output_file)
         calc = self.get_calculator()
-
+        
+        iteration = 0
         for atoms in tqdm.tqdm(self.get_data(), ncols=70):
+            
             atoms.calc = calc
-            atoms.get_potential_energy()
-            db.append(atoms)
-
+            try:
+                atoms.get_potential_energy()
+                db.append(atoms)
+            except:
+                log.info(f"Structure {iteration} not converged")
+                
+            iteration += 1
+            
         for file in self.cp2k_directory.glob("cp2k-RESTART.wfn.*"):
             # we don't need all restart files
             file.unlink()
