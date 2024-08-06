@@ -83,6 +83,7 @@ class _Nodes:
     ThresholdCheck = "ipsuite.analysis.ThresholdCheck"
     TemperatureCheck = "ipsuite.analysis.TemperatureCheck"
     FixedSphereConstraint = "ipsuite.calculators.FixedSphereConstraint"
+    FixedAtomsConstraint = "ipsuite.calculators.FixedAtomsConstraint"
     FixedLayerConstraint = "ipsuite.calculators.FixedLayerConstraint"
     AnalyseDensity = "ipsuite.analysis.AnalyseDensity"
     ReflectionCheck = "ipsuite.analysis.ReflectionCheck"

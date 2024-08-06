@@ -6,6 +6,7 @@ from .ase_md import (
     BoxOscillatingRampModifier,
     FixedLayerConstraint,
     FixedSphereConstraint,
+    FixedAtomsConstraint,
     LangevinThermostat,
     NPTThermostat,
     PressureRampModifier,
@@ -47,4 +48,5 @@ __all__ = [
     "TorchD3",
     "FixedLayerConstraint",
     "MixCalculator",
+    "FixedAtomsConstraint",
 ]

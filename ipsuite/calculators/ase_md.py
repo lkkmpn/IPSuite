@@ -429,6 +429,22 @@ class FixedLayerConstraint(base.IPSNode):
         return ase.constraints.FixAtoms(indices=self.indices)
 
 
+class FixedAtomsConstraint(base.IPSNode):
+    """Class to fix a layer of atoms within a MD
+        simulation
+
+    Attributes
+    ----------
+    indices: List[int]
+        all atoms that will be fixed.
+    """
+
+    indices = zntrack.params()
+
+    def get_constraint(self, atoms):
+
+        return ase.constraints.FixAtoms(indices=self.indices)
+
 class ASEMD(base.IPSNode):
     """Class to run a MD simulation with ASE.
 
